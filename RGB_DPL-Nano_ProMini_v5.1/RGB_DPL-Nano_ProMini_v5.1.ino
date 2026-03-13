@@ -1,5 +1,5 @@
 /*
- * Enhanced RGB-DPL/CBI/LDPL Controller v5.1 (Stable)
+ * Enhanced RGB-DPL/CBI/LDPL Controller v5.1.1 (Stable)
  * For Printed-Droid R2-D2 Replica Display Systems
  *
  * Controls multiple LED display panels (DPL, CBI, Large Logic) for an R2-D2
@@ -7,10 +7,9 @@
  *
  * Hardware Requirements:
  * - Arduino Nano or compatible
- * - 7x WS2812B LED strips (180 total LEDs)
+ * - 6x WS2811 LED strips (144 total LEDs)
  * - Door sensors on pins 15 & 16
  * - Optional: Voltage divider for battery monitoring on A0 (100k/10k)
- * - CSL (Coin Slot Logics) on pin D5 (36 LEDs, 6x6 grid)
  *
  * Features:
  * - Fully addressable RGB control for all panels
@@ -48,9 +47,15 @@
  * - Strip D (18 LEDs, Pin D8): Top panel - Yellow blocks (9) + Green blocks (9)
  * - Strip E (43 LEDs, Pin D7): Large Logic Display Panel
  * - Strip F (23 LEDs, Pin D6): CBI - Matrix (20) + Status lights (3)
- * - Strip G (36 LEDs, Pin D5): CSL - Coin Slot Logics (6x6 grid)
  *
  * ============================================================================
+ *
+ * v5.1.1 Changes:
+ * - CRITICAL FIX: Removed CSL to fix SRAM overflow crash (leds_g[36]
+ *   consumed 108 bytes, leaving only 63 bytes for stack = reset loop).
+ *   CSL should run on a separate dedicated controller.
+ * - Fixed cmdBuffer stack overflow (was 64 bytes on stack, now in-place)
+ * - Reduced serial buffer from 32 to 24 bytes
  *
  * v5.1 Changes:
  * - Fixed compilation error (orphaned comment block without opening tag)
@@ -58,7 +63,6 @@
  * - Fixed EEPROM wear: bootCount only written every 10th boot
  * - Added blinking red LED warning when battery voltage drops below 11.5V
  * - Formatted matrixRain() for readability
- * - Integrated CSL (Coin Slot Logics) with 4 effects on pin D5
  * - Fixed voltage divider resistor values (100k/10k)
  *
  * ============================================================================
@@ -74,7 +78,7 @@
 // ============================================================================
 // Version and Debug
 // ============================================================================
-#define VERSION "5.1"
+#define VERSION "5.1.1"
 
 // ============================================================================
 // Pin Definitions
@@ -90,7 +94,6 @@
 #define DATA_PIN_D 8
 #define DATA_PIN_E 7
 #define DATA_PIN_F 6
-#define DATA_PIN_G 5  // CSL (Coin Slot Logics)
 
 // LED Counts for each strip
 #define NUM_LEDS_A 8
@@ -99,8 +102,10 @@
 #define NUM_LEDS_D 18
 #define NUM_LEDS_E 43
 #define NUM_LEDS_F 23
-#define NUM_LEDS_G 36  // CSL 6x6 grid
-#define TOTAL_LEDS (NUM_LEDS_A + NUM_LEDS_B + NUM_LEDS_C + NUM_LEDS_D + NUM_LEDS_E + NUM_LEDS_F + NUM_LEDS_G)
+#define TOTAL_LEDS (NUM_LEDS_A + NUM_LEDS_B + NUM_LEDS_C + NUM_LEDS_D + NUM_LEDS_E + NUM_LEDS_F)
+
+#define STARTUP_LED_DELAY  15
+#define STARTUP_FLASH_DELAY 150
 
 // ============================================================================
 // Voltage Monitor Configuration
@@ -131,9 +136,6 @@ struct UserProfile {
     bool topBlocksRandom;
     bool sequenceMode;
     bool voltageMonitorEnabled;
-    uint8_t cslMode;        // 0-3
-    uint8_t cslSpeed;       // BPM: 10-200
-    bool cslAutoMode;       // auto-cycle CSL effects
     CRGB customColors[SEC_COUNT];
     uint16_t checksum;
 };
@@ -170,7 +172,7 @@ const PROGMEM uint8_t PERSONALITY_PARAMS[][4] = { {10, 10, 0, 4}, {15, 12, 30, 5
 // ============================================================================
 // Global Variables
 // ============================================================================
-CRGB leds_a[NUM_LEDS_A], leds_b[NUM_LEDS_B], leds_c[NUM_LEDS_C], leds_d[NUM_LEDS_D], leds_e[NUM_LEDS_E], leds_f[NUM_LEDS_F], leds_g[NUM_LEDS_G];
+CRGB leds_a[NUM_LEDS_A], leds_b[NUM_LEDS_B], leds_c[NUM_LEDS_C], leds_d[NUM_LEDS_D], leds_e[NUM_LEDS_E], leds_f[NUM_LEDS_F];
 UserProfile currentProfile;
 SystemConfig sysConfig;
 bool configMode = false;
@@ -191,7 +193,7 @@ public:
 };
 
 Timer topBlockTimer(200), blueTimer(500), bargraphTimer(200), bottomTimer(200), redTimer(500), cbiTimer(50), largeLogicTimer(15), sequenceTimer(15000);
-char serialBuffer[32];
+char serialBuffer[24];
 byte serialBufferPos = 0;
 volatile uint8_t i2cCommand = 0;
 volatile bool i2cCommandReady = false;
@@ -300,20 +302,64 @@ void initDefaultProfile() {
     currentProfile.topBlocksRandom = true;
     currentProfile.sequenceMode = false;
     currentProfile.voltageMonitorEnabled = false;
-    currentProfile.cslMode = 0;
-    currentProfile.cslSpeed = 60;
-    currentProfile.cslAutoMode = true;
     applyProfile();
+}
+
+
+// ============================================================================
+// Startup Sequence
+// ============================================================================
+void startupSequence() {
+    Serial.println(F("Running startup sequence..."));
+
+    FastLED.clear();
+    CRGB* strips[] = {leds_a, leds_b, leds_c, leds_d, leds_e, leds_f};
+    int counts[] = {NUM_LEDS_A, NUM_LEDS_B, NUM_LEDS_C, NUM_LEDS_D, NUM_LEDS_E, NUM_LEDS_F};
+
+    // Rainbow wave across all strips
+    for (int hue = 0; hue < 255; hue += 64) {
+        for (int i = 0; i < TOTAL_LEDS; i++) {
+            int current = 0;
+            for (int s = 0; s < 6; s++) {
+                if (i >= current && i < current + counts[s]) {
+                    strips[s][i - current] = CHSV(hue, 255, 255);
+                }
+                current += counts[s];
+            }
+            FastLED.show();
+
+            for (int s = 0; s < 6; s++) {
+                fadeToBlackBy(strips[s], counts[s], 64);
+            }
+            delay(STARTUP_LED_DELAY);
+        }
+    }
+
+    // Flash all white 3x
+    for (int i = 0; i < 3; i++) {
+        for (int s = 0; s < 6; s++) {
+            fill_solid(strips[s], counts[s], CRGB::White);
+        }
+        FastLED.show();
+        delay(STARTUP_FLASH_DELAY);
+
+        FastLED.clear();
+        FastLED.show();
+        delay(STARTUP_FLASH_DELAY);
+    }
+
+    FastLED.clear();
+    FastLED.show();
+    Serial.println(F("Startup complete."));
 }
 
 // ============================================================================
 // Setup
 // ============================================================================
-void startupSequence();
 
 void setup() {
     Serial.begin(57600);
-    Serial.println(F("\n- RGB DPL Controller v5.1 -"));
+    Serial.println(F("\n- RGB DPL v5.1.1 -"));
 
     pinMode(LEFT_DOOR_PIN, INPUT_PULLUP);
     pinMode(RIGHT_DOOR_PIN, INPUT_PULLUP);
@@ -327,7 +373,6 @@ void setup() {
     FastLED.addLeds<WS2811, DATA_PIN_D, GRB>(leds_d, NUM_LEDS_D);
     FastLED.addLeds<WS2811, DATA_PIN_E, GRB>(leds_e, NUM_LEDS_E);
     FastLED.addLeds<WS2811, DATA_PIN_F, GRB>(leds_f, NUM_LEDS_F);
-    FastLED.addLeds<WS2812, DATA_PIN_G, GRB>(leds_g, NUM_LEDS_G);
     set_max_power_in_volts_and_milliamps(5, 2000);
 
     loadSystemConfig();
@@ -354,7 +399,6 @@ void updateBlueLEDs();
 void updateTopBlocks();
 void processSerialCommand();
 void processI2CCommand();
-void updateCSL();
 
 // ============================================================================
 // Main Loop (Final version with persistent state machine)
@@ -456,7 +500,6 @@ void loop() {
         }
         
         updateLargeLogic();
-        updateCSL();
         FastLED.show();
         EVERY_N_MILLISECONDS(20) { gHue++; }
     }
@@ -478,12 +521,8 @@ void printHelp();
 void printStatus();
 
 void processSerialCommand() {
-    // Create a local, writable copy of the command from the global buffer.
-    char cmdBuffer[64];
-    strcpy(cmdBuffer, serialBuffer);
-    
-    // Tokenize the local copy. strtok automatically handles leading/multiple spaces.
-    char *command = strtok(cmdBuffer, " ");
+    // Work directly on serialBuffer (strtok modifies in-place, buffer is reset after)
+    char *command = strtok(serialBuffer, " ");
 
     // If no command was found after tokenizing (e.g., input was only spaces), just exit.
     // The loop() function will handle resetting the buffer.
@@ -700,32 +739,13 @@ void processSerialCommand() {
             Serial.println(F("COLOR: sec R G B"));
         }
     }
-    else if (strcmp(command, "CSLMODE") == 0) {
-        if (arg1 != NULL) {
-            currentProfile.cslMode = constrain(atoi(arg1), 0, 3);
-            Serial.print(F("CSL Mode: ")); Serial.println(currentProfile.cslMode);
-        } else { Serial.println(F("CSLMODE: 0-3")); }
-    }
-    else if (strcmp(command, "CSLSPEED") == 0) {
-        if (arg1 != NULL) {
-            currentProfile.cslSpeed = constrain(atoi(arg1), 10, 200);
-            Serial.print(F("CSL Speed: ")); Serial.println(currentProfile.cslSpeed);
-        } else { Serial.println(F("CSLSPEED: 10-200")); }
-    }
-    else if (strcmp(command, "CSLAUTO") == 0) {
-        if (arg1 != NULL) {
-            if (strcmp(arg1, "ON")==0) { currentProfile.cslAutoMode = true; }
-            else if (strcmp(arg1, "OFF")==0) { currentProfile.cslAutoMode = false; }
-            Serial.print(F("CSL Auto: ")); Serial.println(currentProfile.cslAutoMode ? "ON" : "OFF");
-        } else { Serial.println(F("CSLAUTO: ON|OFF")); }
-    }
     else { 
         Serial.println(F("Unknown cmd. HELP for list.")); 
     }
 }
 
 void printHelp() {
-    Serial.println(F("\n--- R2-D2 v5.1 ---"));
+    Serial.println(F("\n--- R2-D2 v5.1.1 ---"));
     Serial.println(F("CONFIG EXIT HELP STATUS"));
     Serial.println(F("SAVE/LOAD/DEFAULT <1-5>"));
     Serial.println(F("BRIGHTNESS <1-100> SPEED <1-10>"));
@@ -734,8 +754,6 @@ void printHelp() {
     Serial.println(F("COLOR <s r g b>"));
     Serial.println(F("CBISPEED <1-10> CBIMODE <0-6>"));
     Serial.println(F("LLMODE <0-3> BARGRAPH TOPBLOCKS"));
-    Serial.println(F("CSLMODE <0-3> CSLSPEED <10-200>"));
-    Serial.println(F("CSLAUTO <ON|OFF>"));
 }
 
 void printStatus() {
@@ -752,9 +770,6 @@ void printStatus() {
     Serial.print(F(" | CBIM: ")); Serial.println(currentProfile.cbiMode);
     Serial.print(F("Bar: ")); Serial.print(currentProfile.bargraphSplit ? "Split" : "Classic");
     Serial.print(F(" | Top: ")); Serial.println(currentProfile.topBlocksRandom ? "Random" : "Classic");
-    Serial.print(F("CSL: M")); Serial.print(currentProfile.cslMode);
-    Serial.print(F(" Spd:")); Serial.print(currentProfile.cslSpeed);
-    Serial.print(F(" Auto:")); Serial.println(currentProfile.cslAutoMode ? "ON" : "OFF");
 }
 
 // ============================================================================
@@ -944,69 +959,3 @@ void updateLargeLogic() {
     }
 }
 
-
-// ============================================================================
-// CSL (Coin Slot Logics) Effects - 4 effects on Pin D5
-// ============================================================================
-#define CSL_COLS 6
-#define CSL_ROWS 6
-
-void cslRandomSparkle() {
-    for (int i = 0; i < NUM_LEDS_G; i++) leds_g[i].fadeToBlackBy(20);
-    if (random8() < 80) leds_g[random16(NUM_LEDS_G)] = CHSV(gHue + random8(64), 255, 255);
-}
-
-void cslRainbowWave() {
-    for (int i = 0; i < NUM_LEDS_G; i++)
-        leds_g[i] = CHSV(gHue + (i * 255 / NUM_LEDS_G), 255, beatsin8(currentProfile.cslSpeed, 50, 255, 0, i * 5));
-}
-
-void cslSolidColor() {
-    fill_solid(leds_g, NUM_LEDS_G, CHSV(gHue / 4, 255, beatsin8(currentProfile.cslSpeed, 50, 255)));
-}
-
-void cslKnightRider() {
-    static int8_t krPos = 0, krDir = 1;
-    for (int i = 0; i < NUM_LEDS_G; i++) leds_g[i].fadeToBlackBy(50);
-    EVERY_N_MILLISECONDS(300) {
-        for (int row = 0; row < CSL_ROWS; row++) {
-            leds_g[row * CSL_COLS + krPos] = CRGB::Red;
-            int prev = krPos - krDir;
-            if (prev >= 0 && prev < CSL_COLS) leds_g[row * CSL_COLS + prev] = CRGB(100, 0, 0);
-        }
-        krPos += krDir;
-        if (krPos >= CSL_COLS - 1 || krPos <= 0) krDir = -krDir;
-    }
-}
-
-void updateCSL() {
-    if (currentProfile.cslMode != 0 && currentProfile.cslMode != 3)
-        fill_solid(leds_g, NUM_LEDS_G, CRGB::Black);
-    switch (currentProfile.cslMode) {
-        case 0:  cslRandomSparkle(); break;
-        case 1:  cslRainbowWave(); break;
-        case 2:  cslSolidColor(); break;
-        case 3:  cslKnightRider(); break;
-        default: cslRandomSparkle(); break;
-    }
-    EVERY_N_SECONDS(10) {
-        if (currentProfile.cslAutoMode)
-            currentProfile.cslMode = (currentProfile.cslMode + 1) % 4;
-    }
-}
-
-void startupSequence() {
-    FastLED.clear();
-    for(int i=0; i<3; i++) {
-        fill_solid(leds_a, NUM_LEDS_A, CRGB::White); fill_solid(leds_b, NUM_LEDS_B, CRGB::White);
-        fill_solid(leds_c, NUM_LEDS_C, CRGB::White); fill_solid(leds_d, NUM_LEDS_D, CRGB::White);
-        fill_solid(leds_e, NUM_LEDS_E, CRGB::White); fill_solid(leds_f, NUM_LEDS_F, CRGB::White);
-        fill_solid(leds_g, NUM_LEDS_G, CRGB::White);
-        FastLED.show(); delay(100);
-        FastLED.clear(); FastLED.show(); delay(100);
-    }
-
-    applyProfile();
-    FastLED.show();
-    Serial.println(F("Startup complete!"));
-}

@@ -13,24 +13,23 @@ This project supports two hardware platforms. Choose the version that matches yo
 | | Arduino Nano / Pro Mini | ESP32-S3 Mini |
 |---|---|---|
 | **Folder** | [`RGB_DPL-Nano_ProMini_v5.1/`](RGB_DPL-Nano_ProMini_v5.1/) | [`RGB_DPL-ESP32_S3_Mini_v5.8/`](RGB_DPL-ESP32_S3_Mini_v5.8/) |
-| **Version** | v5.1 | v5.8 |
+| **Version** | v5.1.1 | v5.8 |
 | **MCU** | ATmega328P | ESP32-S3 |
-| **LED Strips** | 7 strips, 180 LEDs | 6 strips, 144 LEDs |
-| **CSL (Coin Slots)** | Integrated (Strip G, 36 LEDs) | Not included (separate controller) |
+| **LED Strips** | 6 strips, 144 LEDs | 6 strips, 144 LEDs |
 | **Baud Rate** | 57600 | 9600 (MarcDuino-ready) |
 | **Power Limit** | 5V / 2A | 5V / 4A |
 | **Voltage Monitor** | 12V only (100k/10k divider) | 12V / 24V auto-config (220k/33k divider) |
 | **Watchdog Timer** | No | Yes (10s, auto-recovery) |
 | **I2C Thread Safety** | Basic | Critical section protected (ISR-safe) |
 | **Timer Overflow Safe** | No (49-day rollover risk) | Yes |
-| **Serial Buffer** | 32 bytes | 64 bytes with overflow protection |
+| **Serial Buffer** | 24 bytes | 64 bytes with overflow protection |
 | **EEPROM Wear Protection** | Yes (write every 10th boot) | Yes |
 | **PROGMEM Handling** | Standard AVR | Corrected for ESP32 (`pgm_read_ptr`) |
 | **ANSI Color Help Menu** | No | Yes |
 | **System INFO Command** | No | Yes (free heap, boot count, version) |
 | **TopBlocks Animations** | 2 modes (Random, Classic) | 5 modes (Classic, Horizontal, Paired, Chaos, Single) |
-| **Flash Usage** | 98% (348 bytes free) | Plenty of headroom |
-| **SRAM Usage** | 96% (63 bytes free) | Plenty of headroom |
+| **Flash Usage** | ~92% | Plenty of headroom |
+| **SRAM Usage** | ~85% (~300 bytes free) | Plenty of headroom |
 
 ---
 
@@ -114,7 +113,6 @@ TOPBLOCKS <mode>        (Nano: RANDOM|CLASSIC, ESP32: 0-4)
 COLOR <sec> <R> <G> <B> Custom color per section
 ```
 
-**Nano-only CSL commands:** `CSLMODE <0-3>`, `CSLSPEED <10-200>`, `CSLAUTO <ON|OFF>`
 
 **ESP32-only commands:** `INFO`, `TEST`
 
@@ -132,12 +130,6 @@ COLOR <sec> <R> <G> <B> Custom color per section
 | D | 18 | Top panel -- Yellow blocks (9) + Green blocks (9) |
 | E | 43 | Large Logic Display Panel |
 | F | 23 | CBI -- Matrix (20) + Status lights (3) |
-
-### Nano Only
-
-| Strip | LEDs | Function |
-|-------|------|----------|
-| G | 36 | CSL -- Coin Slot Logics (6x6 grid) |
 
 Pin assignments differ between boards -- see each version's README for details.
 

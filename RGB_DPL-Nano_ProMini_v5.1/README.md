@@ -1,15 +1,15 @@
-# RGB Data Port Lights (RGB-DPL) Controller v5.1
-**Arduino Nano based RGB LED display controller for R2-D2 Data Port Lights, CBI, Large Logic Display, and Coin Slot Logics**
+# RGB Data Port Lights (RGB-DPL) Controller v5.1.1
+**Arduino Nano / Pro Mini based RGB LED display controller for R2-D2 Data Port Lights, CBI, and Large Logic Display panels**
 
 ## Project Overview
 
-This controller brings your R2-D2's body panels to life with fully addressable RGB LEDs, replacing older MAX7219-based designs with far greater flexibility, color control, and dynamic animations. Built on the Arduino Nano (ATmega328P) platform, it drives seven independent WS2811/WS2812B LED strips across all major display panels: DPL (Data Port Lights), CBI (Charge Bay Indicator), Large Logic Display, and CSL (Coin Slot Logics).
+This controller brings your R2-D2's body panels to life with fully addressable RGB LEDs, replacing older MAX7219-based designs with far greater flexibility, color control, and dynamic animations. Built on the Arduino Nano (ATmega328P) platform, it drives six independent WS2811/WS2812B LED strips across all major display panels: DPL (Data Port Lights), CBI (Charge Bay Indicator), and Large Logic Display.
 
 Designed for builders who want film-accurate animations with the power to customize every color, speed, and behavior.
 
 ### Key Features
 
-- **Fully Addressable RGB** - 180 total WS2811/WS2812B LEDs across 7 independent strips
+- **Fully Addressable RGB** - 144 total WS2811/WS2812B LEDs across 6 independent strips
 - **8 Color Schemes** - Classic, Blue, Pink, Green, Cyberpunk, Forest, Sunset, Custom
 - **5 Personality Modes** - Normal, Happy, Grumpy, Excited, Sleepy (affect speed, hue, and behavior)
 - **5 User Profiles** - Persistent EEPROM storage with checksummed integrity
@@ -21,16 +21,25 @@ Designed for builders who want film-accurate animations with the power to custom
 - **2 TopBlocks Animations** - Random, Classic
 - **7 CBI Display Modes** - Organic, ESB, Rainbow, Sparkle, Heart, Smiley, Matrix Rain
 - **4 Large Logic Modes** - Breathing, Rainbow, Off, Personality-driven
-- **4 CSL Effects** - Random Sparkle, Rainbow Wave, Solid Color, Knight Rider
 - **Boot Sequence** - 3x white flash startup animation
+
+> **Note:** CSL (Coin Slot Logics) was removed in v5.1.1 due to ATmega328P SRAM limitations. CSL should run on a separate dedicated controller.
 
 ---
 
 ## Changelog
 
-### Version 5.1 (Arduino Nano - Current)
+### Version 5.1.1 (Arduino Nano - Current)
 
-**Stability, Safety, Code Quality & CSL Integration**
+**Critical SRAM Fix**
+
+- **Removed CSL (Coin Slot Logics)** - The 7th LED strip (leds_g[36] = 108 bytes) caused SRAM overflow, leaving only 63 bytes for the stack. This caused a permanent reset loop with all LEDs stuck on white. CSL should run on a separate dedicated controller.
+- **Fixed cmdBuffer stack overflow** - processSerialCommand() allocated 64 bytes on the stack (more than available). Now works directly on the serial buffer.
+- **Reduced serial buffer** from 32 to 24 bytes
+
+### Version 5.1
+
+**Stability, Safety & Code Quality**
 
 #### Bug Fixes
 
@@ -52,13 +61,6 @@ Designed for builders who want film-accurate animations with the power to custom
 
 **5. matrixRain() Readability**
 - Reformatted compressed single-line function into readable multi-line code with comments
-
-**6. CSL (Coin Slot Logics) Integration**
-- Added 7th LED strip (36 LEDs, 6x6 grid) on pin D5 for Coin Slot Logics
-- Ported 4 CSL effects from the ESP32 C3 Mini standalone sketch
-- Auto-cycling mode (10 seconds per effect)
-- Serial commands: CSLMODE, CSLSPEED, CSLAUTO
-- CSL settings saved in user profiles
 
 **7. Voltage Divider Corrected**
 - Fixed resistor values to 100k / 10k to match actual hardware
@@ -87,9 +89,11 @@ Designed for builders who want film-accurate animations with the power to custom
 
 ### Core Components
 - **Arduino Nano** (ATmega328P) or compatible clone
-- **WS2811/WS2812B LED strips** - 7 strips, 180 LEDs total
+- **WS2811/WS2812B LED strips** - 6 strips, 144 LEDs total
 - **5V Power Supply** - Minimum 2A recommended (power limiter set to 2000mA)
 - **Voltage divider** (optional) - 100k / 10k resistors for 12V battery monitoring
+
+> **CSL Note:** Coin Slot Logics require a separate dedicated controller due to ATmega328P memory constraints.
 
 ### Optional Components
 - **Door sensors** - 2x microswitch or magnetic reed switches (normally open)
@@ -107,7 +111,6 @@ Designed for builders who want film-accurate animations with the power to custom
 |-----|-------|-----------|----------|
 | D2 | Strip A | 8 LEDs | Bottom white lights (6) + Large red lights (2) |
 | D3 | Strip B | 28 LEDs | VU-Meter display |
-| D5 | Strip G | 36 LEDs | CSL - Coin Slot Logics (6x6 grid) |
 | D6 | Strip F | 23 LEDs | CBI - Matrix (20) + Status lights (3) |
 | D7 | Strip E | 43 LEDs | Large Logic Display Panel |
 | D8 | Strip D | 18 LEDs | Top panel - Yellow blocks (9) + Green blocks (9) |
@@ -135,6 +138,7 @@ Designed for builders who want film-accurate animations with the power to custom
 | Pin | Status |
 |-----|--------|
 | D4 | Free |
+| D5 | Free |
 | D10 | Free |
 | D11 | Free |
 | D12 | Free |
@@ -176,7 +180,7 @@ Designed for builders who want film-accurate animations with the power to custom
 |-----------|-------|
 | Baud Rate | **57600** |
 | Line Ending | Newline (`\n`) |
-| Buffer Size | 32 bytes |
+| Buffer Size | 24 bytes |
 | Timeout | 500ms |
 | Case Sensitivity | None (commands are case-insensitive) |
 
@@ -240,21 +244,6 @@ DEFAULT 0      -> Disable auto-load (use built-in defaults on boot)
 | `CBIMODE <value>` | Set CBI Display mode | 0-6 |
 | `BARGRAPH <style>` | Set bargraph animation style | SPLIT / CLASSIC |
 | `TOPBLOCKS <style>` | Set Top Blocks animation mode | RANDOM / CLASSIC |
-
-### CSL (Coin Slot Logics) Commands
-
-| Command | Description | Range |
-|---------|-------------|-------|
-| `CSLMODE <value>` | Set CSL effect | 0-3 |
-| `CSLSPEED <value>` | Set CSL animation speed (BPM) | 10-200 |
-| `CSLAUTO <ON\|OFF>` | Toggle CSL auto-cycling | ON / OFF |
-
-**CSL Examples:**
-```
-CSLMODE 3          -> Knight Rider effect
-CSLSPEED 80        -> Faster animations
-CSLAUTO ON         -> Enable auto-cycling (changes every 10s)
-```
 
 ---
 
@@ -333,17 +322,6 @@ Personalities modify animation speed, CBI timing, hue shift, and organic randomn
 | 5 | Smiley | Static smiley face in yellow |
 | 6 | Matrix Rain | Green "digital rain" cascade effect |
 
-### CSL - Coin Slot Logics (Strip G - 36 LEDs, 6x6 grid)
-
-| Mode | Name | Description |
-|------|------|-------------|
-| 0 | Random Sparkle | Random fading sparkle pixels with hue variation |
-| 1 | Rainbow Wave | Full rainbow with brightness wave (speed adjustable) |
-| 2 | Solid Color | Breathing solid color pulse (slow hue drift) |
-| 3 | Knight Rider | Red scanner sweep across all 6 columns |
-
-CSL auto-cycling changes the effect every 10 seconds when enabled (`CSLAUTO ON`).
-
 ### Top Blocks (Strip D - 18 LEDs: 9 Yellow + 9 Green)
 
 | Mode | Name | Description |
@@ -376,12 +354,12 @@ The controller uses two door sensors to automatically activate or deactivate dis
 
 | Left Door | Right Door | Active Panels |
 |-----------|------------|---------------|
-| Open (LOW) | Open (LOW) | All panels + Large Logic + CSL |
-| Open (LOW) | Closed (HIGH) | DPL panels + Large Logic + CSL |
-| Closed (HIGH) | Open (LOW) | CBI + Large Logic + CSL |
-| Closed (HIGH) | Closed (HIGH) | Large Logic + CSL only |
+| Open (LOW) | Open (LOW) | All panels + Large Logic |
+| Open (LOW) | Closed (HIGH) | DPL panels + Large Logic |
+| Closed (HIGH) | Open (LOW) | CBI + Large Logic |
+| Closed (HIGH) | Closed (HIGH) | Large Logic only |
 
-> **Note:** The Large Logic Display (Strip E) and CSL (Strip G) are **always active** regardless of door sensor state.
+> **Note:** The Large Logic Display (Strip E) is **always active** regardless of door sensor state.
 
 ---
 
@@ -419,7 +397,7 @@ The controller supports 5 user profiles stored in EEPROM with checksum validatio
 
 ### Profile Storage
 
-- **EEPROM Usage**: ~340 bytes of 1024 available (config + 5 profiles)
+- **EEPROM Usage**: ~330 bytes of 1024 available (config + 5 profiles)
 - **Checksum**: XOR-based checksum with `0xDEAD` magic number
 - **Boot Counter**: Tracks total system boots (written every 10th boot to reduce EEPROM wear)
 
@@ -438,9 +416,6 @@ Each profile stores:
 - Top Blocks mode (Random/Classic)
 - Sequence mode (ON/OFF)
 - Voltage monitor (ON/OFF)
-- CSL mode (0-3)
-- CSL speed (10-200 BPM)
-- CSL auto-cycle (ON/OFF)
 - Custom colors (12 RGB values)
 
 ### Default Profile Values
@@ -458,9 +433,6 @@ Each profile stores:
 | Top Blocks | Random |
 | Sequence Mode | OFF |
 | Voltage Monitor | OFF |
-| CSL Mode | 0 (Random Sparkle) |
-| CSL Speed | 60 BPM |
-| CSL Auto | ON |
 
 ---
 
@@ -471,11 +443,11 @@ On power-up, the controller performs the following initialization:
 1. Serial port initialization (57600 baud)
 2. GPIO configuration (door sensors as INPUT_PULLUP)
 3. I2C slave initialization (address 0x20)
-4. FastLED initialization (7 strips, power limit 5V / 2000mA)
+4. FastLED initialization (6 strips, power limit 5V / 2000mA)
 5. EEPROM initialization and validation
 6. System configuration load (boot count increment, EEPROM write every 10th boot)
 7. Default profile load (if configured)
-8. **Startup animation** - 3x white flash across all 180 LEDs
+8. **Startup animation** - 3x white flash across all 144 LEDs
 9. System ready message
 
 ---
@@ -496,12 +468,11 @@ On power-up, the controller performs the following initialization:
 | I2C not responding | Verify address 0x20, check SDA (A4) / SCL (A5) wiring |
 | Voltage monitor incorrect | Verify resistor values (100k / 10k), check A0 pin |
 | Upload fails | Try "ATmega328P (Old Bootloader)" as processor |
-| CSL LEDs wrong order | Check WS2812B data direction (DIN to DOUT), verify 6x6 grid orientation |
 
 ### Hardware Issues
 
 **LEDs Not Working:**
-- Verify 5V power supply is connected and provides sufficient current (2A minimum, 3A+ recommended with CSL)
+- Verify 5V power supply is connected and provides sufficient current (2A minimum)
 - Check data pin connections match the pin configuration table
 - Ensure WS2811/WS2812B strip direction (data flows from DIN to DOUT)
 - Test with `BRIGHTNESS 100` to rule out low brightness settings
@@ -521,7 +492,7 @@ On power-up, the controller performs the following initialization:
 **Serial Communication:**
 - Baud rate must be **57600** (or 9600 if modified for MarcDuino)
 - Commands must end with newline (`\n`)
-- Maximum command length: 31 characters (32-byte buffer minus null terminator)
+- Maximum command length: 23 characters (24-byte buffer minus null terminator)
 - Commands timeout after 500ms of inactivity
 
 **Configuration Recovery:**
@@ -540,11 +511,11 @@ DEFAULT 0      <- Disable auto-load to use built-in defaults
 | Parameter | Value |
 |-----------|-------|
 | MCU | ATmega328P (Arduino Nano) |
-| Flash | 30720 bytes available (30372 used, 98%) |
-| SRAM | 2048 bytes (1985 used, 96%) |
+| Flash | 30720 bytes available (~92% used) |
+| SRAM | 2048 bytes (~85% used, ~300 bytes free for stack) |
 | EEPROM | 1 KB (~340 bytes used) |
-| Total LEDs | 180 (across 7 strips) |
-| LED Types | WS2811 (GRB, Strips A-F) + WS2812 (GRB, Strip G) |
+| Total LEDs | 144 (across 6 strips) |
+| LED Types | WS2811 (GRB, Strips A-F) |
 | Power Limit | 5V / 2000mA (FastLED managed) |
 
 ### Animation Timing (Base Intervals)
@@ -559,8 +530,6 @@ DEFAULT 0      <- Disable auto-load to use built-in defaults
 | CBI (Organic) | 100ms | CBI Speed + Personality |
 | CBI (ESB) | 800ms | CBI Speed + Personality |
 | Large Logic | 15ms | (internal) |
-| CSL | per-frame | CSL Speed (BPM) |
-| CSL Auto-Cycle | 10 seconds | (fixed) |
 | Sequence Cycle | 15 seconds | (fixed) |
 
 ---
@@ -609,4 +578,4 @@ This project involves electrical components and LED displays. Users are responsi
 
 **May the Force be with your build!**
 
-*RGB-DPL Controller v5.1 | Arduino Nano | Printed-Droid.com*
+*RGB-DPL Controller v5.1.1 | Arduino Nano / Pro Mini | Printed-Droid.com*
