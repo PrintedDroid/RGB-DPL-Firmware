@@ -1,43 +1,45 @@
 /*
  * ============================================================================
- * Enhanced RGB-DPL/CBI/LDPL Controller v5.8
+ * Enhanced RGB-DPL/CBI/LDPL/CSL Controller v6.0
  * For Printed-Droid R2-D2 Replica Display Systems
  * ============================================================================
  *
  * OVERVIEW:
- * ESP32-S3 build for DPL, CBI, and Large Logic using WS2811/WS2812B LEDs.
- * This is the hardened pre-CSL ESP32 generation and the direct base for v6.0.
+ * ESP32-S3 build for DPL, CBI, LDPL, and CSL using WS2811/WS2812B LEDs.
+ * This is the current mainline version and extends the hardened v5.8 base
+ * with a dedicated CSL output and configurable VCC commands.
  *
  * MAIN FEATURES:
  * - Fully addressable RGB control for all panels
- * - DPL, CBI, and Large Logic support
+ * - DPL, CBI, LDPL, and dedicated CSL support
  * - User profiles, color schemes, and personality modes in EEPROM
  * - Serial CLI plus I2C slave support
- * - 12V / 24V voltage monitor support
+ * - Configurable voltage monitor via VM / VL / RR
  * - Watchdog, safer timing, and improved buffer handling
- * - INFO diagnostics and ANSI help output
+ * - LDPL naming in the current UI / CLI
  *
  * VERSION HISTORY:
  * - v5.7: Added fifth TopBlocks animation mode
  * - v5.8: Hardened ESP32-S3 build with watchdog, safer timing, and better buffers
+ * - v6.0: Added CSL output, LDPL naming, and configurable VCC commands
  *
- * VERSION 5.8 CHANGES:
- * - Fixed PROGMEM access for ESP32 compatibility
- * - Added I2C critical sections for safer ISR handling
- * - Improved serial buffer overflow protection
- * - Switched timing checks to rollover-safe millis() handling
- * - Added watchdog timer support
- * - Replaced magic numbers with named constants
- * - Expanded INFO / health diagnostics
- * - Corrected ANSI escape sequences and pattern sizes
+ * VERSION 6.0 CHANGES:
+ * - Added dedicated CSL output on GPIO13 with 36 LEDs
+ * - Added CSL commands: CSLMODE / CSLSPEED / CSLBRIGHTNESS
+ * - Renamed Large Logic to LDPL in the current UI and CLI
+ * - Kept LLMODE as compatibility alias
+ * - Added VCC configuration commands: VM / VL / RR
+ * - Default voltage divider set to 100k / 10k
+ * - Default voltage thresholds set to 11.5 / 12.0 / 12.5 / 13.0
  *
  * HARDWARE & PINOUT:
  * - Strip A (8 LEDs, D4):  Bottom white (6) + Large red (2)
  * - Strip B (28 LEDs, D5): VU meter
  * - Strip C (24 LEDs, D6): Blue column (6) + Bargraph (18)
  * - Strip D (18 LEDs, D7): Top yellow (9) + Top green (9)
- * - Strip E (43 LEDs, D8): Large Logic
+ * - Strip E (43 LEDs, D8): LDPL
  * - Strip F (23 LEDs, D9): CBI matrix (20) + status (3)
+ * - Strip G (36 LEDs, D13): CSL
  * - Inputs: D10 left door, D11 right door, D12 voltage monitor
  *
  * ARDUINO IDE NOTES:
@@ -58,14 +60,18 @@
  * BRIGHTNESS <1-100>, SPEED <1-10>, CBISPEED <1-10>
  * SCHEME <name|num>, PERSONALITY <0-4>
  * SEQUENCE <ON|OFF>, VOLTAGE <ON|OFF>
+ * VM <0|1>, VL <RED YELLOW GREEN CHARGE>, RR <R1 R2>
  * COLOR <section> <R> <G> <B>
  *
  * --- Panel Modes & Quick Keys ---
- * LLMODE <0-3>
+ * LDPLMODE <0-3>   (LLMODE kept as alias)
  * CBIMODE <0-6>
+ * CSLMODE <0-7>
+ * CSLSPEED <1-10>
+ * CSLBRIGHTNESS <1-100>
  * BARGRAPH <SPLIT|CLASSIC>
  * TOPBLOCKS <0-4>
- * P0-P4, S0-S7, L0-L3, C0-C6
+ * P0-P4, S0-S7
  */
 
 
@@ -81,8 +87,8 @@
 // ============================================================================
 // System Configuration Constants
 // ============================================================================
-#define VERSION "5.8.1-ESP32"
-#define SYSTEM_VOLTAGE 24
+#define VERSION "6.0.0-ESP32"
+#define SYSTEM_VOLTAGE 12
 
 // Watchdog timer (10 seconds)
 #define WDT_TIMEOUT 10
@@ -134,6 +140,7 @@
 #define DATA_PIN_D 7
 #define DATA_PIN_E 8
 #define DATA_PIN_F 9
+#define DATA_PIN_G 13
 
 // LED Counts per strip
 #define NUM_LEDS_A 8
@@ -142,7 +149,8 @@
 #define NUM_LEDS_D 18
 #define NUM_LEDS_E 43
 #define NUM_LEDS_F 23
-#define TOTAL_LEDS (NUM_LEDS_A + NUM_LEDS_B + NUM_LEDS_C + NUM_LEDS_D + NUM_LEDS_E + NUM_LEDS_F)
+#define NUM_LEDS_G 36
+#define TOTAL_LEDS (NUM_LEDS_A + NUM_LEDS_B + NUM_LEDS_C + NUM_LEDS_D + NUM_LEDS_E + NUM_LEDS_F + NUM_LEDS_G)
 
 // CBI Matrix configuration
 #define CBI_MATRIX_LEDS 20
@@ -152,8 +160,12 @@
 // Voltage Monitor Configuration (Universal 12V-24V)
 // ============================================================================
 float GREEN_VCC, YELLOW_VCC, RED_VCC;
-#define VOLTAGE_R1 220000.0f
-#define VOLTAGE_R2 33000.0f
+#define DEFAULT_VOLTAGE_R1 100000.0f
+#define DEFAULT_VOLTAGE_R2 10000.0f
+#define DEFAULT_LIMIT_RED 11.5f
+#define DEFAULT_LIMIT_YELLOW 12.0f
+#define DEFAULT_LIMIT_GREEN 12.5f
+#define DEFAULT_LIMIT_CHARGE 13.0f
 #define ADC_MAX_VALUE 4095.0f
 #define ADC_REFERENCE_VOLTAGE 3.3f
 
@@ -174,7 +186,7 @@ enum LEDSection {
     SEC_TOP_YELLOW, SEC_TOP_GREEN, SEC_BLUE_COLUMN, 
     SEC_BARGRAPH_LOW, SEC_BARGRAPH_MID, SEC_BARGRAPH_HIGH, 
     SEC_BOTTOM_WHITE, SEC_RED_LARGE, SEC_VU_METER, 
-    SEC_CBI_MATRIX, SEC_CBI_STATUS, SEC_LARGE_LOGIC, 
+    SEC_CBI_MATRIX, SEC_CBI_STATUS, SEC_LDPL, SEC_CSL,
     SEC_COUNT 
 };
 
@@ -197,12 +209,15 @@ struct UserProfile {
     uint8_t cbiSpeed;
     uint8_t colorScheme;
     uint8_t personality;
-    uint8_t llMode;
+    uint8_t ldplMode;
     uint8_t cbiMode;
+    uint8_t cslMode;
     bool bargraphSplit;
     bool sequenceMode;
     bool voltageMonitorEnabled;
     uint8_t topBlocksMode;
+    uint8_t cslSpeed;
+    uint8_t cslBrightness;
     CRGB customColors[SEC_COUNT];
     uint16_t checksum;
 };
@@ -210,6 +225,13 @@ struct UserProfile {
 struct SystemConfig {
     uint8_t defaultProfile;
     uint16_t bootCount;
+    float voltageR1;
+    float voltageR2;
+    float limitRed;
+    float limitYellow;
+    float limitGreen;
+    float limitCharge;
+    bool monitorVccEnabled;
     uint16_t checksum;
 };
 
@@ -294,6 +316,7 @@ CRGB leds_c[NUM_LEDS_C];
 CRGB leds_d[NUM_LEDS_D];
 CRGB leds_e[NUM_LEDS_E];
 CRGB leds_f[NUM_LEDS_F];
+CRGB leds_g[NUM_LEDS_G];
 
 UserProfile currentProfile;
 SystemConfig sysConfig;
@@ -356,7 +379,8 @@ Timer bargraphTimer(BARGRAPH_BASE_INTERVAL);
 Timer bottomTimer(BOTTOM_BASE_INTERVAL);
 Timer redTimer(RED_BASE_INTERVAL);
 Timer cbiTimer(CBI_BASE_INTERVAL);
-Timer largeLogicTimer(LARGLOGIC_BASE_INTERVAL);
+Timer ldplTimer(LARGLOGIC_BASE_INTERVAL);
+Timer cslTimer(80);
 Timer sequenceTimer(SEQUENCE_INTERVAL);
 
 // ============================================================================
@@ -389,6 +413,13 @@ bool loadSystemConfig() {
         Serial.println(F("System config invalid, initializing defaults"));
         sysConfig.defaultProfile = 0;
         sysConfig.bootCount = 0;
+        sysConfig.voltageR1 = DEFAULT_VOLTAGE_R1;
+        sysConfig.voltageR2 = DEFAULT_VOLTAGE_R2;
+        sysConfig.limitRed = DEFAULT_LIMIT_RED;
+        sysConfig.limitYellow = DEFAULT_LIMIT_YELLOW;
+        sysConfig.limitGreen = DEFAULT_LIMIT_GREEN;
+        sysConfig.limitCharge = DEFAULT_LIMIT_CHARGE;
+        sysConfig.monitorVccEnabled = false;
         return saveSystemConfig();
     }
     
@@ -411,6 +442,7 @@ bool loadProfile(uint8_t profileNum) {
     
     if (temp.checksum == calculateChecksum(&temp, sizeof(UserProfile))) {
         currentProfile = temp;
+        currentProfile.voltageMonitorEnabled = sysConfig.monitorVccEnabled;
         applyProfile();
         Serial.print(F("Loaded profile "));
         Serial.println(profileNum + 1);
@@ -449,12 +481,16 @@ void initDefaultProfile() {
     currentProfile.cbiSpeed = 3;
     currentProfile.colorScheme = CLASSIC;
     currentProfile.personality = NORMAL;
-    currentProfile.llMode = 0;
+    currentProfile.ldplMode = 0;
     currentProfile.cbiMode = 0;
+    currentProfile.cslMode = 1;
     currentProfile.bargraphSplit = false;
     currentProfile.topBlocksMode = TOPBLOCKS_CLASSIC;
     currentProfile.sequenceMode = false;
-    currentProfile.voltageMonitorEnabled = false;
+    currentProfile.voltageMonitorEnabled = sysConfig.monitorVccEnabled;
+    currentProfile.cslSpeed = 5;
+    currentProfile.cslBrightness = 25;
+    memset(currentProfile.customColors, 0, sizeof(currentProfile.customColors));
     applyProfile();
 }
 
@@ -474,6 +510,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::White;
             colorTable[SEC_RED_LARGE] = CRGB::Red;
             colorTable[SEC_CBI_MATRIX] = CRGB::Red;
+            colorTable[SEC_CBI_STATUS] = CRGB::Red;
+            colorTable[SEC_LDPL] = CRGB::Blue;
+            colorTable[SEC_CSL] = CRGB::Blue;
             break;
             
         case BLUE:
@@ -486,6 +525,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::LightBlue;
             colorTable[SEC_RED_LARGE] = CRGB::Blue;
             colorTable[SEC_CBI_MATRIX] = CRGB::Blue;
+            colorTable[SEC_CBI_STATUS] = CRGB::White;
+            colorTable[SEC_LDPL] = CRGB::DeepSkyBlue;
+            colorTable[SEC_CSL] = CRGB::Blue;
             break;
             
         case PINK:
@@ -498,6 +540,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::HotPink;
             colorTable[SEC_RED_LARGE] = CRGB::DeepPink;
             colorTable[SEC_CBI_MATRIX] = CRGB::Magenta;
+            colorTable[SEC_CBI_STATUS] = CRGB::HotPink;
+            colorTable[SEC_LDPL] = CRGB::Magenta;
+            colorTable[SEC_CSL] = CRGB::DeepPink;
             break;
             
         case GREEN:
@@ -510,6 +555,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::PaleGreen;
             colorTable[SEC_RED_LARGE] = CRGB::ForestGreen;
             colorTable[SEC_CBI_MATRIX] = CRGB::Green;
+            colorTable[SEC_CBI_STATUS] = CRGB::Lime;
+            colorTable[SEC_LDPL] = CRGB::SeaGreen;
+            colorTable[SEC_CSL] = CRGB::Green;
             break;
             
         case CYBERPUNK:
@@ -522,6 +570,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::LightCyan;
             colorTable[SEC_RED_LARGE] = CRGB::Magenta;
             colorTable[SEC_CBI_MATRIX] = CRGB::Cyan;
+            colorTable[SEC_CBI_STATUS] = CRGB::Yellow;
+            colorTable[SEC_LDPL] = CRGB::Cyan;
+            colorTable[SEC_CSL] = CRGB::DeepPink;
             break;
             
         case FOREST:
@@ -534,6 +585,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::LightGoldenrodYellow;
             colorTable[SEC_RED_LARGE] = CRGB::DarkOrange;
             colorTable[SEC_CBI_MATRIX] = CRGB::DarkGreen;
+            colorTable[SEC_CBI_STATUS] = CRGB::Orange;
+            colorTable[SEC_LDPL] = CRGB::DarkGreen;
+            colorTable[SEC_CSL] = CRGB::Orange;
             break;
             
         case SUNSET:
@@ -546,6 +600,9 @@ void updateColorTable() {
             colorTable[SEC_BOTTOM_WHITE] = CRGB::Gold;
             colorTable[SEC_RED_LARGE] = CRGB::OrangeRed;
             colorTable[SEC_CBI_MATRIX] = CRGB::DarkViolet;
+            colorTable[SEC_CBI_STATUS] = CRGB::OrangeRed;
+            colorTable[SEC_LDPL] = CRGB::DarkViolet;
+            colorTable[SEC_CSL] = CRGB::Orange;
             break;
             
         case CUSTOM:
@@ -599,7 +656,7 @@ void processI2CCommand() {
 // ============================================================================
 void printHelp() {
     Serial.println(F(""));
-    Serial.println(ANSI_STYLE_BOLD ANSI_COLOR_CYAN "=== R2-D2 Display Controller v5.8 ===" ANSI_COLOR_RESET);
+    Serial.println(ANSI_STYLE_BOLD ANSI_COLOR_CYAN "=== R2-D2 Display Controller v6.0 ===" ANSI_COLOR_RESET);
     Serial.println(F("Syntax: COMMAND <parameter>"));
     
     Serial.println(ANSI_STYLE_BOLD ANSI_COLOR_YELLOW "\n== SYSTEM ==" ANSI_COLOR_RESET);
@@ -618,9 +675,12 @@ void printHelp() {
     Serial.println(F("  CBISPEED <1-10>     - CBI animation speed"));
     Serial.println(F("  SEQUENCE <ON|OFF>   - Auto-cycle animations"));
     Serial.println(F("  VOLTAGE <ON|OFF>    - CBI voltage monitor"));
+    Serial.println(F("  VM <0|1>            - Global VCC monitor enable"));
+    Serial.println(F("  VL <R Y G C>        - VCC limits red/yellow/green/charge"));
+    Serial.println(F("  RR <R1 R2>          - Voltage divider resistor values"));
     Serial.println(F("  PERSONALITY <0-4>   - 0:Normal 1:Happy 2:Grumpy 3:Excited 4:Sleepy"));
     Serial.println(F("  SCHEME <name|num>   - Color scheme (see list below)"));
-    Serial.println(F("  COLOR <s r g b>     - Custom section color"));
+    Serial.println(F("  COLOR <s r g b>     - Custom section color (0-12; 11=LDPL, 12=CSL)"));
     
     Serial.println(ANSI_STYLE_BOLD ANSI_COLOR_YELLOW "\n-- Color Schemes --" ANSI_COLOR_RESET);
     for (int i = 0; i < SCHEME_COUNT; i++) {
@@ -632,8 +692,12 @@ void printHelp() {
     }
     
     Serial.println(ANSI_STYLE_BOLD ANSI_COLOR_YELLOW "\n== PANEL MODES ==" ANSI_COLOR_RESET);
-    Serial.println(F("  LLMODE <0-3>        - Large Logic (0:Breathe 1:Rainbow 2:Off 3:Personality)"));
+    Serial.println(F("  LDPLMODE <0-3>      - LDPL (0:Breathe 1:Rainbow 2:Off 3:Personality)"));
+    Serial.println(F("  LLMODE <0-3>        - Legacy alias for LDPLMODE"));
     Serial.println(F("  CBIMODE <0-6>       - CBI Display (0:Organic 1:ESB 2:Rainbow...)"));
+    Serial.println(F("  CSLMODE <0-7>       - CSL (0:Off 1:Default 2:Static 3:Glow 4-7:Running)"));
+    Serial.println(F("  CSLSPEED <1-10>     - CSL animation speed"));
+    Serial.println(F("  CSLBRIGHTNESS <1-100> - CSL relative brightness"));
     Serial.println(F("  BARGRAPH <SPLIT|CLASSIC> - Bargraph style"));
     Serial.println(F("  TOPBLOCKS <0-4>     - 0:Classic 1:Horizontal 2:Paired 3:Chaos 4:Single"));
     Serial.println(F("============================================"));
@@ -662,8 +726,27 @@ void printStatus() {
     Serial.print(F(" | Voltage: "));
     Serial.println(currentProfile.voltageMonitorEnabled ? "ON" : "OFF");
     
-    Serial.print(F("LL Mode: ")); Serial.print(currentProfile.llMode);
+    Serial.print(F("LDPL Mode: ")); Serial.print(currentProfile.ldplMode);
     Serial.print(F(" | CBI Mode: ")); Serial.print(currentProfile.cbiMode);
+    Serial.print(F(" | CSL Mode: ")); Serial.println(currentProfile.cslMode);
+
+    Serial.print(F("CSL Speed: ")); Serial.print(currentProfile.cslSpeed);
+    Serial.print(F(" | CSL Brightness: ")); Serial.print(currentProfile.cslBrightness);
+    Serial.println(F("%"));
+
+    Serial.print(F("VCC Divider: "));
+    Serial.print(sysConfig.voltageR1, 0);
+    Serial.print(F("/"));
+    Serial.print(sysConfig.voltageR2, 0);
+    Serial.print(F(" | Limits R/Y/G/C: "));
+    Serial.print(sysConfig.limitRed, 2);
+    Serial.print(F("/"));
+    Serial.print(sysConfig.limitYellow, 2);
+    Serial.print(F("/"));
+    Serial.print(sysConfig.limitGreen, 2);
+    Serial.print(F("/"));
+    Serial.println(sysConfig.limitCharge, 2);
+
     Serial.print(F(" | Bargraph: "));
     Serial.println(currentProfile.bargraphSplit ? "Split" : "Classic");
     
@@ -724,6 +807,18 @@ void processSerialCommand() {
         Serial.print(F("Free Heap: ")); Serial.print(ESP.getFreeHeap()); Serial.println(F(" bytes"));
         Serial.print(F("Total LEDs: ")); Serial.println(TOTAL_LEDS);
         Serial.print(F("Boot Count: ")); Serial.println(sysConfig.bootCount);
+        Serial.print(F("R1/R2: "));
+        Serial.print(sysConfig.voltageR1, 0);
+        Serial.print(F("/"));
+        Serial.println(sysConfig.voltageR2, 0);
+        Serial.print(F("Voltage Limits (R/Y/G/C): "));
+        Serial.print(sysConfig.limitRed, 2);
+        Serial.print(F(" / "));
+        Serial.print(sysConfig.limitYellow, 2);
+        Serial.print(F(" / "));
+        Serial.print(sysConfig.limitGreen, 2);
+        Serial.print(F(" / "));
+        Serial.println(sysConfig.limitCharge, 2);
         return;
     }
     
@@ -882,10 +977,10 @@ void processSerialCommand() {
                     Serial.println(F("ERROR: Invalid section"));
                 }
             } else {
-                Serial.println(F("ERROR: COLOR requires: section(0-11) R(0-255) G(0-255) B(0-255)"));
+                Serial.println(F("ERROR: COLOR requires: section(0-12) R(0-255) G(0-255) B(0-255)"));
             }
         } else {
-            Serial.println(F("ERROR: COLOR requires: section(0-11) R(0-255) G(0-255) B(0-255)"));
+            Serial.println(F("ERROR: COLOR requires: section(0-12) R(0-255) G(0-255) B(0-255)"));
         }
         return;
     }
@@ -911,9 +1006,13 @@ void processSerialCommand() {
         if (arg1 != NULL) {
             if (strcmp(arg1, "ON") == 0) {
                 currentProfile.voltageMonitorEnabled = true;
+                sysConfig.monitorVccEnabled = true;
+                saveSystemConfig();
                 Serial.println(F("Voltage Monitor: ON"));
             } else if (strcmp(arg1, "OFF") == 0) {
                 currentProfile.voltageMonitorEnabled = false;
+                sysConfig.monitorVccEnabled = false;
+                saveSystemConfig();
                 Serial.println(F("Voltage Monitor: OFF"));
             } else {
                 Serial.println(F("ERROR: Use ON or OFF"));
@@ -923,19 +1022,78 @@ void processSerialCommand() {
         }
         return;
     }
+
+    if (strcmp(command, "VM") == 0) {
+        if (arg1 != NULL) {
+            if (strcmp(arg1, "1") == 0 || strcmp(arg1, "ON") == 0) {
+                currentProfile.voltageMonitorEnabled = true;
+                sysConfig.monitorVccEnabled = true;
+                saveSystemConfig();
+                Serial.println(F("OK"));
+            } else if (strcmp(arg1, "0") == 0 || strcmp(arg1, "OFF") == 0) {
+                currentProfile.voltageMonitorEnabled = false;
+                sysConfig.monitorVccEnabled = false;
+                saveSystemConfig();
+                Serial.println(F("OK"));
+            } else {
+                Serial.println(F("ERROR: VM requires 0 or 1"));
+            }
+        } else {
+            Serial.println(F("ERROR: VM requires 0 or 1"));
+        }
+        return;
+    }
+
+    if (strcmp(command, "VL") == 0) {
+        if (arg1 != NULL) {
+            char* arg2 = strtok(NULL, " ");
+            char* arg3 = strtok(NULL, " ");
+            char* arg4 = strtok(NULL, " ");
+            if (arg2 && arg3 && arg4) {
+                sysConfig.limitRed = atof(arg1);
+                sysConfig.limitYellow = atof(arg2);
+                sysConfig.limitGreen = atof(arg3);
+                sysConfig.limitCharge = atof(arg4);
+                saveSystemConfig();
+                Serial.println(F("OK"));
+            } else {
+                Serial.println(F("ERROR: VL requires RED YELLOW GREEN CHARGE"));
+            }
+        } else {
+            Serial.println(F("ERROR: VL requires RED YELLOW GREEN CHARGE"));
+        }
+        return;
+    }
+
+    if (strcmp(command, "RR") == 0) {
+        if (arg1 != NULL) {
+            char* arg2 = strtok(NULL, " ");
+            if (arg2) {
+                sysConfig.voltageR1 = atof(arg1);
+                sysConfig.voltageR2 = atof(arg2);
+                saveSystemConfig();
+                Serial.println(F("OK"));
+            } else {
+                Serial.println(F("ERROR: RR requires R1 R2"));
+            }
+        } else {
+            Serial.println(F("ERROR: RR requires R1 R2"));
+        }
+        return;
+    }
     
     // === Panel Modes ===
-    if (strcmp(command, "LLMODE") == 0) {
+    if (strcmp(command, "LDPLMODE") == 0 || strcmp(command, "LLMODE") == 0) {
         if (arg1 != NULL) {
             int val = atoi(arg1);
             if (val >= 0 && val <= 3) {
-                currentProfile.llMode = val;
-                Serial.println(F("Large Logic mode updated"));
+                currentProfile.ldplMode = val;
+                Serial.println(F("LDPL mode updated"));
             } else {
-                Serial.println(F("ERROR: LLMODE must be 0-3"));
+                Serial.println(F("ERROR: LDPLMODE must be 0-3"));
             }
         } else {
-            Serial.println(F("ERROR: LLMODE requires value (0-3)"));
+            Serial.println(F("ERROR: LDPLMODE requires value (0-3)"));
         }
         return;
     }
@@ -951,6 +1109,51 @@ void processSerialCommand() {
             }
         } else {
             Serial.println(F("ERROR: CBIMODE requires value (0-6)"));
+        }
+        return;
+    }
+
+    if (strcmp(command, "CSLMODE") == 0) {
+        if (arg1 != NULL) {
+            int val = atoi(arg1);
+            if (val >= 0 && val <= 7) {
+                currentProfile.cslMode = val;
+                Serial.println(F("CSL mode updated"));
+            } else {
+                Serial.println(F("ERROR: CSLMODE must be 0-7"));
+            }
+        } else {
+            Serial.println(F("ERROR: CSLMODE requires value (0-7)"));
+        }
+        return;
+    }
+
+    if (strcmp(command, "CSLSPEED") == 0) {
+        if (arg1 != NULL) {
+            int val = atoi(arg1);
+            if (val >= 1 && val <= 10) {
+                currentProfile.cslSpeed = val;
+                Serial.println(F("CSL speed updated"));
+            } else {
+                Serial.println(F("ERROR: CSLSPEED must be 1-10"));
+            }
+        } else {
+            Serial.println(F("ERROR: CSLSPEED requires value (1-10)"));
+        }
+        return;
+    }
+
+    if (strcmp(command, "CSLBRIGHTNESS") == 0) {
+        if (arg1 != NULL) {
+            int val = atoi(arg1);
+            if (val >= 1 && val <= 100) {
+                currentProfile.cslBrightness = val;
+                Serial.println(F("CSL brightness updated"));
+            } else {
+                Serial.println(F("ERROR: CSLBRIGHTNESS must be 1-100"));
+            }
+        } else {
+            Serial.println(F("ERROR: CSLBRIGHTNESS requires value (1-100)"));
         }
         return;
     }
@@ -992,8 +1195,8 @@ void processSerialCommand() {
     if (command[0] == 'L' && strlen(command) == 2) {
         int mode = command[1] - '0';
         if (mode >= 0 && mode <= 3) {
-            currentProfile.llMode = mode;
-            Serial.print(F("LL Mode: ")); Serial.println(mode);
+            currentProfile.ldplMode = mode;
+            Serial.print(F("LDPL Mode: ")); Serial.println(mode);
             return;
         }
     }
@@ -1222,11 +1425,11 @@ void updateVuMeter() {
 void getVCC() {
     int rawValue = analogRead(ANALOG_INPUT);
     float vout = (rawValue * ADC_REFERENCE_VOLTAGE) / ADC_MAX_VALUE;
-    float vin = vout / (VOLTAGE_R2 / (VOLTAGE_R1 + VOLTAGE_R2));
+    float vin = vout / (sysConfig.voltageR2 / (sysConfig.voltageR1 + sysConfig.voltageR2));
     
-    leds_f[20] = (vin >= GREEN_VCC) ? CRGB::Green : CRGB::Black;
-    leds_f[21] = (vin < GREEN_VCC && vin >= YELLOW_VCC) ? CRGB::Yellow : CRGB::Black;
-    leds_f[22] = (vin < YELLOW_VCC) ? CRGB::Red : CRGB::Black;
+    leds_f[20] = (vin >= sysConfig.limitGreen) ? CRGB::Green : CRGB::Black;
+    leds_f[21] = (vin < sysConfig.limitGreen && vin >= sysConfig.limitYellow) ? CRGB::Yellow : CRGB::Black;
+    leds_f[22] = (vin < sysConfig.limitYellow) ? CRGB::Red : CRGB::Black;
 }
 
 void drawHeart() {
@@ -1334,15 +1537,82 @@ void updateCBILEDs() {
 }
 
 // ============================================================================
-// Large Logic Functions
+// LDPL Functions
 // ============================================================================
-void largeLogicBreathing() {
+CRGB scaleModuleColor(const CRGB& color, uint8_t percent) {
+    CRGB scaled = color;
+    scaled.nscale8_video(map(percent, 1, 100, 10, 255));
+    return scaled;
+}
+
+void updateCSL() {
+    static uint8_t cslOffset = 0;
+    fadeToBlackBy(leds_g, NUM_LEDS_G, 32);
+
+    CRGB cslBase = scaleModuleColor(colorTable[SEC_CSL], currentProfile.cslBrightness);
+    uint8_t glow = beatsin8(10 + currentProfile.cslSpeed, 20, 255);
+
+    switch (currentProfile.cslMode) {
+        case 0: // Off
+            fill_solid(leds_g, NUM_LEDS_G, CRGB::Black);
+            break;
+
+        case 1: // Default
+            for (int i = 0; i < NUM_LEDS_G; i += 6) {
+                int pos = (i + cslOffset) % NUM_LEDS_G;
+                leds_g[pos] = cslBase;
+            }
+            break;
+
+        case 2: // Static color
+            fill_solid(leds_g, NUM_LEDS_G, cslBase);
+            break;
+
+        case 3: { // Color glow
+            CRGB glowColor = cslBase;
+            glowColor.nscale8_video(glow);
+            fill_solid(leds_g, NUM_LEDS_G, glowColor);
+            break;
+        }
+
+        case 4: // Running lights 1
+            for (int i = 0; i < NUM_LEDS_G; i += 3) {
+                leds_g[(i + cslOffset) % NUM_LEDS_G] = cslBase;
+            }
+            break;
+
+        case 5: // Running lights 2
+            leds_g[cslOffset % NUM_LEDS_G] = cslBase;
+            leds_g[(NUM_LEDS_G - 1 - cslOffset) % NUM_LEDS_G] = cslBase;
+            break;
+
+        case 6: // Running lights 3
+            for (int i = 0; i < NUM_LEDS_G; i++) {
+                if (((i + cslOffset) % 8) < 3) {
+                    leds_g[i] = cslBase;
+                }
+            }
+            break;
+
+        case 7: { // Running lights 4
+            int pos = beatsin16(10 + currentProfile.cslSpeed * 3, 0, NUM_LEDS_G - 1);
+            leds_g[pos] = cslBase;
+            if (pos > 0) leds_g[pos - 1] = scaleModuleColor(cslBase, currentProfile.cslBrightness / 2 + 1);
+            if (pos < NUM_LEDS_G - 1) leds_g[pos + 1] = scaleModuleColor(cslBase, currentProfile.cslBrightness / 2 + 1);
+            break;
+        }
+    }
+
+    cslOffset = (cslOffset + 1) % NUM_LEDS_G;
+}
+
+void ldplBreathing() {
     uint8_t beat = beatsin8(5, 30, 255);
-    CHSV color = rgb2hsv_approximate(colorTable[SEC_LARGE_LOGIC]);
+    CHSV color = rgb2hsv_approximate(colorTable[SEC_LDPL]);
     fill_solid(leds_e, NUM_LEDS_E, CHSV(color.h, color.s, beat));
 }
 
-void largeLogicPersonality() {
+void ldplPersonality() {
     switch (currentProfile.personality) {
         case HAPPY:
             fadeToBlackBy(leds_e, NUM_LEDS_E, 20);
@@ -1364,15 +1634,15 @@ void largeLogicPersonality() {
             break;
             
         default:
-            largeLogicBreathing();
+            ldplBreathing();
             break;
     }
 }
 
-void updateLargeLogic() {
-    switch (currentProfile.llMode) {
+void updateLDPL() {
+    switch (currentProfile.ldplMode) {
         case 0: // Breathing
-            largeLogicBreathing();
+            ldplBreathing();
             break;
             
         case 1: // Rainbow
@@ -1384,7 +1654,7 @@ void updateLargeLogic() {
             break;
             
         case 3: // Personality
-            largeLogicPersonality();
+            ldplPersonality();
             break;
     }
 }
@@ -1396,15 +1666,15 @@ void startupSequence() {
     Serial.println(F("Running startup sequence..."));
     
     FastLED.clear();
-    CRGB* strips[] = {leds_a, leds_b, leds_c, leds_d, leds_e, leds_f};
-    int counts[] = {NUM_LEDS_A, NUM_LEDS_B, NUM_LEDS_C, NUM_LEDS_D, NUM_LEDS_E, NUM_LEDS_F};
+    CRGB* strips[] = {leds_a, leds_b, leds_c, leds_d, leds_e, leds_f, leds_g};
+    int counts[] = {NUM_LEDS_A, NUM_LEDS_B, NUM_LEDS_C, NUM_LEDS_D, NUM_LEDS_E, NUM_LEDS_F, NUM_LEDS_G};
     
     // Rainbow wave
     for (int hue = 0; hue < 255; hue += 64) {
         esp_task_wdt_reset();  // Feed watchdog during long animation
         for (int i = 0; i < TOTAL_LEDS; i++) {
             int current = 0;
-            for (int s = 0; s < 6; s++) {
+            for (int s = 0; s < 7; s++) {
                 if (i >= current && i < current + counts[s]) {
                     strips[s][i - current] = CHSV(hue, 255, 255);
                 }
@@ -1412,7 +1682,7 @@ void startupSequence() {
             }
             FastLED.show();
             
-            for (int s = 0; s < 6; s++) {
+            for (int s = 0; s < 7; s++) {
                 fadeToBlackBy(strips[s], counts[s], 64);
             }
             delay(STARTUP_LED_DELAY);
@@ -1423,7 +1693,7 @@ void startupSequence() {
     
     // Flash all white
     for (int i = 0; i < 3; i++) {
-        for (int s = 0; s < 6; s++) {
+        for (int s = 0; s < 7; s++) {
             fill_solid(strips[s], counts[s], CRGB::White);
         }
         FastLED.show();
@@ -1452,17 +1722,10 @@ void setup() {
     Serial.println(F("============================================"));
     
     // Configure voltage monitor thresholds
-    if (SYSTEM_VOLTAGE == 24) {
-        GREEN_VCC = 23.5f;
-        YELLOW_VCC = 22.0f;
-        RED_VCC = 21.0f;
-        Serial.println(F("Voltage monitor: 24V system"));
-    } else {
-        GREEN_VCC = 12.5f;
-        YELLOW_VCC = 12.0f;
-        RED_VCC = 11.5f;
-        Serial.println(F("Voltage monitor: 12V system"));
-    }
+    GREEN_VCC = DEFAULT_LIMIT_GREEN;
+    YELLOW_VCC = DEFAULT_LIMIT_YELLOW;
+    RED_VCC = DEFAULT_LIMIT_RED;
+    Serial.println(F("Voltage monitor defaults: 12V / 100k-10k"));
     
     // Initialize watchdog timer
     Serial.println(F("Enabling watchdog timer..."));
@@ -1509,6 +1772,7 @@ void setup() {
     FastLED.addLeds<WS2811, DATA_PIN_D, GRB>(leds_d, NUM_LEDS_D);
     FastLED.addLeds<WS2811, DATA_PIN_E, GRB>(leds_e, NUM_LEDS_E);
     FastLED.addLeds<WS2811, DATA_PIN_F, GRB>(leds_f, NUM_LEDS_F);
+    FastLED.addLeds<WS2811, DATA_PIN_G, GRB>(leds_g, NUM_LEDS_G);
     
     set_max_power_in_volts_and_milliamps(5, 4000);
     
@@ -1532,6 +1796,8 @@ void setup() {
         Serial.println(F("No default profile, using defaults"));
         initDefaultProfile();
     }
+
+    currentProfile.voltageMonitorEnabled = sysConfig.monitorVccEnabled;
     
     // Run startup sequence
     startupSequence();
@@ -1623,7 +1889,8 @@ void loop() {
         // Sequence mode auto-cycling
         if (currentProfile.sequenceMode && sequenceTimer.ready()) {
             currentProfile.cbiMode = (currentProfile.cbiMode + 1) % 7;
-            currentProfile.llMode = (currentProfile.llMode + 1) % 4;
+            currentProfile.ldplMode = (currentProfile.ldplMode + 1) % 4;
+            currentProfile.cslMode = (currentProfile.cslMode % 7) + 1;
         }
         
         // Calculate speed multipliers from personality
@@ -1643,6 +1910,7 @@ void loop() {
                                (CBI_ESB_INTERVAL / cbiSpeedMult) : 
                                (CBI_BASE_INTERVAL / cbiSpeedMult);
         cbiTimer.setInterval(cbiInterval);
+        cslTimer.setInterval(map(currentProfile.cslSpeed, 1, 10, 240, 20));
         
         // === Left Door Panels ===
         if (digitalRead(LEFT_DOOR_PIN) == LOW) {
@@ -1669,8 +1937,9 @@ void loop() {
             fill_solid(leds_f, NUM_LEDS_F, CRGB::Black);
         }
         
-        // === Large Logic (always active) ===
-        updateLargeLogic();
+        // === LDPL and CSL (always active) ===
+        updateLDPL();
+        if (cslTimer.ready()) updateCSL();
         
         // Update LEDs
         FastLED.show();
