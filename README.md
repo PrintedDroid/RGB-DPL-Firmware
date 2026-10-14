@@ -1,7 +1,7 @@
 # RGB-DPL Firmware
 
 <!-- webflash-notice -->
-> **Notice:** Future versions of this firmware are released as ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The documentation (commands, usage, settings) will continue to be updated here and in the wiki; the source code in this repository remains available in its current state but will no longer be updated.
+> **Notice:** New firmware for the **ESP32-S3 and ESP32-WROOM** variants (**v6.1** — including the local **Web UI / Access Point** and the extended **LDPL effects**: `LDPLCOLOR`, 16 modes) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **final at v5.2** and is available only here in this repository — there are no new Nano builds and it is not on the web flasher. The documentation (commands, usage, settings) continues to be updated here and in the wiki; the source code in this repository (ESP32-S3 v6.0, Nano v5.2) is the last openly published snapshot and will no longer be updated.
 >
 > **Why:** Printed Droid has shared its source code openly for years. In the meantime, more and more projects in the community build on openly shared work but release their own results as closed source only. Open source works in both directions – this one-way street is not something we will keep supplying.
 
@@ -148,16 +148,9 @@ Both sketches compile cleanly:
 
 ---
 
-## Legacy versions
+## Older firmware versions
 
-The repository also contains two older firmware revisions for users with already-built systems. These are kept for reference and downgrade safety, but **new builds should use the current sketches above**.
-
-| Folder | Variant | Status | What's different from current |
-|--------|---------|--------|--------------------------------|
-| [`RGB_DPL-Nano_ProMini_v5.1/`](RGB_DPL-Nano_ProMini_v5.1/) | Pro Mini | superseded by v5.2 | no CSL support; has I2C slave (`0x20`); blinking-red low-voltage warning |
-| [`RGB_DPL-ESP32_S3_Mini_v5.8/`](RGB_DPL-ESP32_S3_Mini_v5.8/) | ESP32-S3 | superseded by v6.0 | no CSL support; default voltage divider 220k/33k; default system 24V; baud rate 57600 |
-
-For full migration tips between firmware versions, see the appendix in the user manual.
+Earlier firmware revisions (Nano v5.1, ESP32-S3 v5.8) are no longer kept in this repository. Migration notes between firmware versions are in the appendix of the user manual.
 
 ## Project structure
 
@@ -173,14 +166,6 @@ RGB-DPL-Firmware/
 
   RGB_DPL-Nano_ProMini_v5.2/           current Pro Mini build
     RGB_DPL-Nano_ProMini_v5.2.ino
-    README.md
-
-  RGB_DPL-ESP32_S3_Mini_v5.8/          legacy ESP32-S3 (no CSL)
-    RGB_DPL-ESP32_S3_Mini_v5.8.ino
-    README.md
-
-  RGB_DPL-Nano_ProMini_v5.1/           legacy Pro Mini (no CSL)
-    RGB_DPL-Nano_ProMini_v5.1.ino
     README.md
 ```
 
