@@ -1,7 +1,7 @@
 # RGB-DPL Firmware
 
 <!-- webflash-notice -->
-> **Notice:** The current **ESP32-S3 / ESP32-WROOM** firmware (**v6.1.1** — local **Web UI / Access Point**, extended **LDPL effects** (`LDPLCOLOR` + 16 modes), a selectable **startup style**, and per-panel **serial on/off**) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **not** on the web flasher — it lives here in this repository and is kept up to date (currently **v5.2.1**, which adds `ALLON` / `ALLOFF`). The documentation (commands, usage, settings) is updated here and in the wiki; the **ESP32-S3 source** in this repository (**v6.0**) is the last openly published ESP snapshot and will no longer be updated — the current ESP firmware ships via the web flasher.
+> **Notice:** The current **ESP32-S3 / ESP32-WROOM** firmware (**v6.2.0** — local **Web UI / Access Point**, extended **LDPL effects** (`LDPLCOLOR` + 16 modes), **20 CSL modes** (0-19) + `CSLCOLOR`, a selectable **startup style**, and per-panel **serial on/off**; the WROOM comes in **two HW revisions, 1.1 / 2.1**, with the voltage sense on ADC1/GPIO33) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **not** on the web flasher — it lives here in this repository and is kept up to date (currently **v5.2.1**, which adds `ALLON` / `ALLOFF`). The documentation (commands, usage, settings) is updated here and in the wiki; the **ESP32-S3 source** in this repository (**v6.0**) is the last openly published ESP snapshot and will no longer be updated — the current ESP firmware ships via the web flasher.
 >
 > **Why:** Printed Droid has shared its source code openly for years. In the meantime, more and more projects in the community build on openly shared work but release their own results as closed source only. Open source works in both directions – this one-way street is not something we will keep supplying.
 
@@ -117,7 +117,7 @@ COLOR <section> <R> <G> <B>
 
 LDPLMODE <0-3>     LLMODE <0-3>     (alias)
 CBIMODE <0-6>
-CSLMODE <0-7>      CSLSPEED <1-10>     CSLBRIGHTNESS <1-100>
+CSLMODE <0-19>     CSLSPEED <1-10>     CSLBRIGHTNESS <1-100>     CSLCOLOR <R> <G> <B>
 BARGRAPH <SPLIT|CLASSIC>
 TOPBLOCKS <RANDOM|CLASSIC>     (Pro Mini)
 TOPBLOCKS <0-4>                (ESP32-S3)
@@ -129,8 +129,9 @@ ALLON / ALLOFF   All panels on/off (Nano v5.2.1 and current ESP firmware)
 P0-P4 / S0-S7    Quick commands for personality / scheme
 ```
 
-> The current web-flasher ESP firmware (v6.1.1) additionally has `STARTUP 0|1` (boot style) and
-> per-panel `ON <panel>` / `OFF <panel>`; the Nano v5.2.1 in this repo has `ALLON` / `ALLOFF`. See the
+> The current web-flasher ESP firmware (v6.2.0) additionally has `STARTUP 0|1` (boot style),
+> per-panel `ON <panel>` / `OFF <panel>`, 20 CSL modes (`CSLMODE 0-19`) + `CSLCOLOR`, and — on the
+> WROOM — two HW revisions (1.1 / 2.1). The Nano v5.2.1 in this repo has `ALLON` / `ALLOFF`. See the
 > manual for the full, per-variant command reference.
 
 ---
