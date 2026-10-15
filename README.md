@@ -1,7 +1,7 @@
 # RGB-DPL Firmware
 
 <!-- webflash-notice -->
-> **Notice:** This repository holds the open standalone firmware sources: **ESP32-WROOM** (`RGB-DPL32`, **v6.1.1**) and **Nano / Pro Mini** (**v5.2.1**), both maintained here, plus the older **ESP32-S3 Mini** snapshot (**v6.0**). The current **ESP32-S3** firmware (v6.1.1) and ready-to-flash installers for the ESP variants are in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The v6.1.1 ESP firmware adds a local **Web UI / Access Point**, extended **LDPL effects** (`LDPLCOLOR` + 16 modes), a selectable **startup style** (`STARTUP 0|1`), and per-panel **serial on/off** (`ON`/`OFF <panel>`, `ALLON`/`ALLOFF`). Documentation (commands, usage, settings) is updated here and in the wiki.
+> **Notice:** The current **ESP32-S3 / ESP32-WROOM** firmware (**v6.1.1** — local **Web UI / Access Point**, extended **LDPL effects** (`LDPLCOLOR` + 16 modes), a selectable **startup style**, and per-panel **serial on/off**) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **not** on the web flasher — it lives here in this repository and is kept up to date (currently **v5.2.1**, which adds `ALLON` / `ALLOFF`). The documentation (commands, usage, settings) is updated here and in the wiki; the **ESP32-S3 source** in this repository (**v6.0**) is the last openly published ESP snapshot and will no longer be updated — the current ESP firmware ships via the web flasher.
 >
 > **Why:** Printed Droid has shared its source code openly for years. In the meantime, more and more projects in the community build on openly shared work but release their own results as closed source only. Open source works in both directions – this one-way street is not something we will keep supplying.
 
@@ -18,7 +18,6 @@ Drives DPL, CBI, LDPL and CSL panels for R2-D2 and other Astromech droids using 
 4. Configure the board:
    - **Pro Mini:** Board = `Arduino Nano`, Processor = `ATmega328P`, baud = `57600`
    - **ESP32-S3:** Board = `LOLIN S3 Mini` (or `ESP32S3 Dev Module`), `USB CDC On Boot` = **Enabled**, baud = `9600`
-   - **ESP32-WROOM (RGB-DPL32):** Board = `ESP32 Dev Module`, Partition = Default, baud = `9600`
 5. Click **Upload**
 6. Bridge the `Left Door` and `Right Door` headers (or attach door switches) — otherwise some LED sections stay dark
 7. Open a serial terminal at the right baud rate, line ending **Newline**, and send `BRIGHTNESS 50` → LEDs respond
@@ -34,33 +33,29 @@ For full setup, hardware wiring, all commands, animations and troubleshooting, s
 
 ## Which sketch to use
 
-| | Pro Mini | ESP32-S3 Mini | ESP32-WROOM (RGB-DPL32) |
-|---|---|---|---|
-| **Folder** | [`RGB_DPL-Nano_ProMini_v5.2/`](RGB_DPL-Nano_ProMini_v5.2/) | [`RGB_DPL-ESP32_S3_Mini_v6.0/`](RGB_DPL-ESP32_S3_Mini_v6.0/) | [`RGB-DPL32/`](RGB-DPL32/) |
-| **Version** | v5.2.1 | v6.0 (older snapshot) | v6.1.1 |
-| **MCU** | ATmega328P | ESP32-S3 | ESP32-WROOM |
-| **LED outputs** | 7 strips, 180 LEDs | 7 strips, 180 LEDs | 6 strips, 144 LEDs (no CSL) |
-| **Baud rate** | 57600 | 9600 | 9600 |
-| **LDPL** | yes | yes | yes |
-| **CSL** | yes | yes | no (not wired) |
-| **Local Web UI / AP** | no | v6.1.1 only (not in this v6.0 folder) | yes |
-| **VCC commands** (`VM`, `VL`, `RR`) | yes | yes | yes |
-| **Watchdog** | no | yes | yes |
-| **TopBlocks modes** | 2 (RANDOM/CLASSIC) | 5 (0-4) | 5 (0-4) |
-| **Voltage divider default** | 100k / 10k | 100k / 10k | 100k / 10k |
-| **Headroom** | very tight (98% flash) | plenty | plenty |
+| | Pro Mini variant | ESP32-S3 variant |
+|---|---|---|
+| **Folder** | [`RGB_DPL-Nano_ProMini_v5.2/`](RGB_DPL-Nano_ProMini_v5.2/) | [`RGB_DPL-ESP32_S3_Mini_v6.0/`](RGB_DPL-ESP32_S3_Mini_v6.0/) |
+| **Version** | v5.2.1 | v6.0 |
+| **MCU** | ATmega328P | ESP32-S3 |
+| **LED outputs** | 7 strips, 180 LEDs | 7 strips, 180 LEDs |
+| **Baud rate** | 57600 | 9600 |
+| **LDPL** | yes | yes |
+| **CSL** | yes | yes |
+| **VCC commands** (`VM`, `VL`, `RR`) | yes | yes |
+| **I2C slave** | no, removed to fit on Nano | yes (address 0x20) |
+| **Watchdog** | no | yes (10 s) |
+| **TopBlocks modes** | 2 (RANDOM/CLASSIC) | 5 (0-4) |
+| **Voltage divider default** | 100k / 10k | 100k / 10k |
+| **Headroom** | very tight (98% flash, 89% RAM) | plenty |
+| **Recommended status** | existing Pro Mini hardware | mainline / recommended |
 
-The sketches are not interchangeable. Use the one that matches your controller.
-
-> **Note on the ESP32-S3 Mini folder:** it is the older **v6.0** snapshot (no Web UI). The current S3
-> firmware (**v6.1.1**, with Web UI and the new `STARTUP` / panel on/off commands) is on the web flasher;
-> the S3 source can be refreshed here on request.
+The two sketches are not interchangeable. Use the one that matches your controller.
 
 ### Short recommendation
 
-- **ESP32-WROOM (RGB-DPL32):** `RGB-DPL32/` — current, with Web UI and the new commands.
-- **ESP32-S3 Mini:** this repo has the v6.0 snapshot; for the current build use the web flasher.
-- **Only choose Pro Mini:** if your hardware is already built around Arduino Nano / Pro Mini.
+- **Best overall / recommended:** `RGB_DPL-ESP32_S3_Mini_v6.0`
+- **Only choose Pro Mini:** if your hardware is already built around Arduino Nano / Pro Mini
 
 ## Looking for the classic variant?
 
@@ -154,7 +149,6 @@ P0-P4 / S0-S7    Quick commands for personality / scheme
 
 Both sketches compile cleanly:
 
-- `RGB-DPL32` (v6.1.1) for `esp32:esp32:esp32` (ESP32 Dev Module) — flash `1125084 / 1310720`, globals `51444 / 327680` (plenty of headroom)
 - `RGB_DPL-ESP32_S3_Mini_v6.0` for `esp32:esp32:lolin_s3_mini` — flash `397k / 1310k`, RAM `25k / 327k` (plenty of headroom)
 - `RGB_DPL-Nano_ProMini_v5.2` (v5.2.1) for `arduino:avr:nano` — flash `30296 / 30720`, RAM `1822 / 2048` (very close to ATmega328P limits, treat as careful test build)
 
@@ -176,15 +170,8 @@ RGB-DPL-Firmware/
     RGB_DPL-ESP32_S3_Mini_v6.0.ino
     README.md
 
-  RGB_DPL-Nano_ProMini_v5.2/           current Pro Mini build (v5.2.1)
+  RGB_DPL-Nano_ProMini_v5.2/           current Pro Mini build
     RGB_DPL-Nano_ProMini_v5.2.ino
-    README.md
-
-  RGB-DPL32/                           current ESP32-WROOM build (v6.1.1), self-contained
-    RGB-DPL32.ino
-    rgbdpl_power.h
-    rgbdpl_standalone_web.h
-    rgbdpl_ldpl_patterns.h
     README.md
 ```
 
