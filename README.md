@@ -1,7 +1,7 @@
 # RGB-DPL Firmware
 
 <!-- webflash-notice -->
-> **Notice:** New firmware for the **ESP32-S3 and ESP32-WROOM** variants (**v6.1** — including the local **Web UI / Access Point** and the extended **LDPL effects**: `LDPLCOLOR`, 16 modes) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **final at v5.2** and is available only here in this repository — there are no new Nano builds and it is not on the web flasher. The documentation (commands, usage, settings) continues to be updated here and in the wiki; the source code in this repository (ESP32-S3 v6.0, Nano v5.2) is the last openly published snapshot and will no longer be updated.
+> **Notice:** The current **ESP32-S3 / ESP32-WROOM** firmware (**v6.1.1** — local **Web UI / Access Point**, extended **LDPL effects** (`LDPLCOLOR` + 16 modes), a selectable **startup style**, and per-panel **serial on/off**) is released **only** as a ready-to-flash web installer in the [Printed Droid Firmware Flasher](https://www.printed-droid.com/firmware-flasher/). The **Nano / Pro Mini** firmware is **not** on the web flasher — it lives here in this repository and is kept up to date (currently **v5.2.1**, which adds `ALLON` / `ALLOFF`). The documentation (commands, usage, settings) is updated here and in the wiki; the **ESP32-S3 source** in this repository (**v6.0**) is the last openly published ESP snapshot and will no longer be updated — the current ESP firmware ships via the web flasher.
 >
 > **Why:** Printed Droid has shared its source code openly for years. In the meantime, more and more projects in the community build on openly shared work but release their own results as closed source only. Open source works in both directions – this one-way street is not something we will keep supplying.
 
@@ -36,7 +36,7 @@ For full setup, hardware wiring, all commands, animations and troubleshooting, s
 | | Pro Mini variant | ESP32-S3 variant |
 |---|---|---|
 | **Folder** | [`RGB_DPL-Nano_ProMini_v5.2/`](RGB_DPL-Nano_ProMini_v5.2/) | [`RGB_DPL-ESP32_S3_Mini_v6.0/`](RGB_DPL-ESP32_S3_Mini_v6.0/) |
-| **Version** | v5.2 | v6.0 |
+| **Version** | v5.2.1 | v6.0 |
 | **MCU** | ATmega328P | ESP32-S3 |
 | **LED outputs** | 7 strips, 180 LEDs | 7 strips, 180 LEDs |
 | **Baud rate** | 57600 | 9600 |
@@ -124,8 +124,14 @@ TOPBLOCKS <0-4>                (ESP32-S3)
 
 VM <0|1>     VL <RED YELLOW GREEN CHARGE>     RR <R1 R2>
 
+ALLON / ALLOFF   All panels on/off (Nano v5.2.1 and current ESP firmware)
+
 P0-P4 / S0-S7    Quick commands for personality / scheme
 ```
+
+> The current web-flasher ESP firmware (v6.1.1) additionally has `STARTUP 0|1` (boot style) and
+> per-panel `ON <panel>` / `OFF <panel>`; the Nano v5.2.1 in this repo has `ALLON` / `ALLOFF`. See the
+> manual for the full, per-variant command reference.
 
 ---
 
@@ -144,7 +150,7 @@ P0-P4 / S0-S7    Quick commands for personality / scheme
 Both sketches compile cleanly:
 
 - `RGB_DPL-ESP32_S3_Mini_v6.0` for `esp32:esp32:lolin_s3_mini` — flash `397k / 1310k`, RAM `25k / 327k` (plenty of headroom)
-- `RGB_DPL-Nano_ProMini_v5.2` for `arduino:avr:nano` — flash `30676 / 30720`, RAM `1825 / 2048` (very close to ATmega328P limits, treat as careful test build)
+- `RGB_DPL-Nano_ProMini_v5.2` (v5.2.1) for `arduino:avr:nano` — flash `30296 / 30720`, RAM `1822 / 2048` (very close to ATmega328P limits, treat as careful test build)
 
 ---
 

@@ -85,7 +85,7 @@
 // ============================================================================
 // Version and Debug
 // ============================================================================
-#define VERSION "5.2.0-NANO"
+#define VERSION "5.2.1-NANO"
 
 // ============================================================================
 // Pin Definitions
@@ -206,6 +206,17 @@ unsigned long lastSerialActivityTime = 0;
 #define EEPROM_MAGIC 0xDEAD
 #define EEPROM_SYS_ADDR 0
 #define EEPROM_PROFILE_ADDR(x) (sizeof(SystemConfig) + (x * sizeof(UserProfile)))
+static_assert(EEPROM_PROFILE_ADDR(5) <= 1022, "Power state overlaps profiles");
+static bool nanoPowerOn = true;
+static void loadNanoPower() {
+    nanoPowerOn = EEPROM.read(1022) != 0xA5 || EEPROM.read(1023) != 0;
+}
+static void saveNanoPower(bool on) {
+    EEPROM.update(1022, 0xA5);
+    EEPROM.update(1023, on ? 1 : 0);
+    nanoPowerOn = on;
+    if (!on) { FastLED.clear(); FastLED.show(); }
+}
 
 uint16_t calculateChecksum(void* data, size_t size) {
     uint16_t sum = 0;
@@ -269,15 +280,21 @@ void saveProfile(uint8_t profileNum) {
 // Profile and Color Management
 // ============================================================================
 void updateColorTable() {
-    switch (currentProfile.colorScheme) {
-        case CLASSIC:    colorTable[SEC_TOP_YELLOW]=CRGB::Yellow; colorTable[SEC_TOP_GREEN]=CRGB::Green; colorTable[SEC_BLUE_COLUMN]=CRGB::Blue; colorTable[SEC_BARGRAPH_LOW]=CRGB::Green; colorTable[SEC_BARGRAPH_MID]=CRGB::Yellow; colorTable[SEC_BARGRAPH_HIGH]=CRGB::Red; colorTable[SEC_BOTTOM_WHITE]=CRGB::White; colorTable[SEC_RED_LARGE]=CRGB::Red; colorTable[SEC_CBI_MATRIX]=CRGB::Red; colorTable[SEC_CBI_STATUS]=CRGB::Red; colorTable[SEC_LDPL]=CRGB::Blue; colorTable[SEC_CSL]=CRGB::Blue; break;
-        case BLUE:       colorTable[SEC_TOP_YELLOW]=CRGB::Cyan; colorTable[SEC_TOP_GREEN]=CRGB::Blue; colorTable[SEC_BLUE_COLUMN]=CRGB::DeepSkyBlue; colorTable[SEC_BARGRAPH_LOW]=CRGB::Blue; colorTable[SEC_BARGRAPH_MID]=CRGB::Cyan; colorTable[SEC_BARGRAPH_HIGH]=CRGB::White; colorTable[SEC_BOTTOM_WHITE]=CRGB::LightBlue; colorTable[SEC_RED_LARGE]=CRGB::Blue; colorTable[SEC_CBI_MATRIX]=CRGB::Blue; colorTable[SEC_CBI_STATUS]=CRGB::White; colorTable[SEC_LDPL]=CRGB::DeepSkyBlue; colorTable[SEC_CSL]=CRGB::Blue; break;
-        case PINK:       colorTable[SEC_TOP_YELLOW]=CRGB::Pink; colorTable[SEC_TOP_GREEN]=CRGB::Magenta; colorTable[SEC_BLUE_COLUMN]=CRGB::Purple; colorTable[SEC_BARGRAPH_LOW]=CRGB::Pink; colorTable[SEC_BARGRAPH_MID]=CRGB::HotPink; colorTable[SEC_BARGRAPH_HIGH]=CRGB::Magenta; colorTable[SEC_BOTTOM_WHITE]=CRGB::LavenderBlush; colorTable[SEC_RED_LARGE]=CRGB::DeepPink; colorTable[SEC_CBI_MATRIX]=CRGB::Magenta; colorTable[SEC_CBI_STATUS]=CRGB::HotPink; colorTable[SEC_LDPL]=CRGB::Magenta; colorTable[SEC_CSL]=CRGB::DeepPink; break;
-        case GREEN:      colorTable[SEC_TOP_YELLOW]=CRGB::YellowGreen; colorTable[SEC_TOP_GREEN]=CRGB::Green; colorTable[SEC_BLUE_COLUMN]=CRGB::SeaGreen; colorTable[SEC_BARGRAPH_LOW]=CRGB::DarkGreen; colorTable[SEC_BARGRAPH_MID]=CRGB::Green; colorTable[SEC_BARGRAPH_HIGH]=CRGB::Lime; colorTable[SEC_BOTTOM_WHITE]=CRGB::PaleGreen; colorTable[SEC_RED_LARGE]=CRGB::ForestGreen; colorTable[SEC_CBI_MATRIX]=CRGB::Green; colorTable[SEC_CBI_STATUS]=CRGB::Lime; colorTable[SEC_LDPL]=CRGB::SeaGreen; colorTable[SEC_CSL]=CRGB::Green; break;
-        case CYBERPUNK:  colorTable[SEC_TOP_YELLOW]=CRGB::Magenta; colorTable[SEC_TOP_GREEN]=CRGB::Purple; colorTable[SEC_BLUE_COLUMN]=CRGB::Cyan; colorTable[SEC_BARGRAPH_LOW]=CRGB::DeepPink; colorTable[SEC_BARGRAPH_MID]=CRGB::Cyan; colorTable[SEC_BARGRAPH_HIGH]=CRGB::Yellow; colorTable[SEC_BOTTOM_WHITE]=CRGB::LightCyan; colorTable[SEC_RED_LARGE]=CRGB::Magenta; colorTable[SEC_CBI_MATRIX]=CRGB::Cyan; colorTable[SEC_CBI_STATUS]=CRGB::Yellow; colorTable[SEC_LDPL]=CRGB::Cyan; colorTable[SEC_CSL]=CRGB::DeepPink; break;
-        case FOREST:     colorTable[SEC_TOP_YELLOW]=CRGB::Orange; colorTable[SEC_TOP_GREEN]=CRGB::DarkGreen; colorTable[SEC_BLUE_COLUMN]=CRGB::SeaGreen; colorTable[SEC_BARGRAPH_LOW]=CRGB::Green; colorTable[SEC_BARGRAPH_MID]=CRGB::Brown; colorTable[SEC_BARGRAPH_HIGH]=CRGB::Orange; colorTable[SEC_BOTTOM_WHITE]=CRGB::LightGoldenrodYellow; colorTable[SEC_RED_LARGE]=CRGB::DarkOrange; colorTable[SEC_CBI_MATRIX]=CRGB::DarkGreen; colorTable[SEC_CBI_STATUS]=CRGB::Orange; colorTable[SEC_LDPL]=CRGB::DarkGreen; colorTable[SEC_CSL]=CRGB::Orange; break;
-        case SUNSET:     colorTable[SEC_TOP_YELLOW]=CRGB::OrangeRed; colorTable[SEC_TOP_GREEN]=CRGB::DarkViolet; colorTable[SEC_BLUE_COLUMN]=CRGB::Orange; colorTable[SEC_BARGRAPH_LOW]=CRGB::Orange; colorTable[SEC_BARGRAPH_MID]=CRGB::Red; colorTable[SEC_BARGRAPH_HIGH]=CRGB::DarkViolet; colorTable[SEC_BOTTOM_WHITE]=CRGB::Gold; colorTable[SEC_RED_LARGE]=CRGB::OrangeRed; colorTable[SEC_CBI_MATRIX]=CRGB::DarkViolet; colorTable[SEC_CBI_STATUS]=CRGB::OrangeRed; colorTable[SEC_LDPL]=CRGB::DarkViolet; colorTable[SEC_CSL]=CRGB::Orange; break;
-        case CUSTOM:     memcpy(colorTable, currentProfile.customColors, sizeof(colorTable)); break;
+    static const uint32_t palettes[7][12] PROGMEM = {
+        {CRGB::Yellow,CRGB::Green,CRGB::Blue,CRGB::Green,CRGB::Yellow,CRGB::Red,CRGB::White,CRGB::Red,CRGB::Red,CRGB::Red,CRGB::Blue,CRGB::Blue},
+        {CRGB::Cyan,CRGB::Blue,CRGB::DeepSkyBlue,CRGB::Blue,CRGB::Cyan,CRGB::White,CRGB::LightBlue,CRGB::Blue,CRGB::Blue,CRGB::White,CRGB::DeepSkyBlue,CRGB::Blue},
+        {CRGB::Pink,CRGB::Magenta,CRGB::Purple,CRGB::Pink,CRGB::HotPink,CRGB::Magenta,CRGB::LavenderBlush,CRGB::DeepPink,CRGB::Magenta,CRGB::HotPink,CRGB::Magenta,CRGB::DeepPink},
+        {CRGB::YellowGreen,CRGB::Green,CRGB::SeaGreen,CRGB::DarkGreen,CRGB::Green,CRGB::Lime,CRGB::PaleGreen,CRGB::ForestGreen,CRGB::Green,CRGB::Lime,CRGB::SeaGreen,CRGB::Green},
+        {CRGB::Magenta,CRGB::Purple,CRGB::Cyan,CRGB::DeepPink,CRGB::Cyan,CRGB::Yellow,CRGB::LightCyan,CRGB::Magenta,CRGB::Cyan,CRGB::Yellow,CRGB::Cyan,CRGB::DeepPink},
+        {CRGB::Orange,CRGB::DarkGreen,CRGB::SeaGreen,CRGB::Green,CRGB::Brown,CRGB::Orange,CRGB::LightGoldenrodYellow,CRGB::DarkOrange,CRGB::DarkGreen,CRGB::Orange,CRGB::DarkGreen,CRGB::Orange},
+        {CRGB::OrangeRed,CRGB::DarkViolet,CRGB::Orange,CRGB::Orange,CRGB::Red,CRGB::DarkViolet,CRGB::Gold,CRGB::OrangeRed,CRGB::DarkViolet,CRGB::OrangeRed,CRGB::DarkViolet,CRGB::Orange}
+    };
+    if (currentProfile.colorScheme == CUSTOM) memcpy(colorTable, currentProfile.customColors, sizeof(colorTable));
+    else if (currentProfile.colorScheme < CUSTOM) {
+        for (uint8_t i = 0; i < 12; ++i) {
+            uint8_t section = i < 8 ? i : i + 1;
+            colorTable[section] = CRGB(pgm_read_dword(&palettes[currentProfile.colorScheme][i]));
+        }
     }
     uint8_t persParams[4];
     memcpy_P(persParams, PERSONALITY_PARAMS[currentProfile.personality], 4);
@@ -370,7 +387,7 @@ void startupSequence() {
 
 void setup() {
     Serial.begin(57600);
-    Serial.println(F("\n- RGB DPL v5.2 -"));
+    Serial.println(F("\n- RGB DPL v5.2.1 -"));
 
     pinMode(LEFT_DOOR_PIN, INPUT_PULLUP);
     pinMode(RIGHT_DOOR_PIN, INPUT_PULLUP);
@@ -392,7 +409,9 @@ void setup() {
         initDefaultProfile();
     }
 
-    startupSequence();
+    loadNanoPower();
+    if (nanoPowerOn) startupSequence();
+    else { FastLED.clear(); FastLED.show(); }
     Serial.println(F("Ready! Type HELP for a list of commands."));
 }
 
@@ -461,6 +480,7 @@ void loop() {
     // --- ANIMATION & LOGIC ---
     // Only run animations if we are NOT waiting for a serial command to complete.
     if (!isWaitingForCommand) {
+        if (!nanoPowerOn) return;
         if (currentProfile.sequenceMode && sequenceTimer.ready()) {
             currentProfile.cbiMode = (currentProfile.cbiMode + 1) % 7;
             currentProfile.ldplMode = (currentProfile.ldplMode + 1) % 4;
@@ -541,7 +561,11 @@ void processSerialCommand() {
     }
 
     // --- Command Processing Logic ---
-    if (strcmp(command, "CONFIG") == 0) { 
+    if (strcmp(command, "ALLON") == 0 || strcmp(command, "ALLOFF") == 0) {
+        saveNanoPower(strcmp(command, "ALLON") == 0);
+        Serial.println(F("OK"));
+    }
+    else if (strcmp(command, "CONFIG") == 0) { 
         printHelp(); 
     }
     else if (strcmp(command, "EXIT") == 0) { 
@@ -817,8 +841,8 @@ void processSerialCommand() {
 }
 
 void printHelp() {
-    Serial.println(F("\nRGB-DPL Nano v5.2"));
-    Serial.println(F("CFG/EXIT HELP STATUS SAVE LOAD DEFAULT"));
+    Serial.println(F("\nRGB-DPL Nano v5.2.1"));
+    Serial.println(F("CFG/EXIT HELP STATUS SAVE LOAD DEFAULT ALLON ALLOFF"));
     Serial.println(F("BRIGHTNESS SPEED CBISPEED SCHEME PERSONALITY"));
     Serial.println(F("SEQUENCE VOLTAGE VM VL RR COLOR"));
     Serial.println(F("LDPLMODE/LLMODE CBIMODE CSLMODE CSLSPEED CSLBRIGHTNESS"));
@@ -826,6 +850,7 @@ void printHelp() {
 }
 
 void printStatus() {
+    Serial.print(F("PWR ")); Serial.println(nanoPowerOn);
     Serial.println(F("\nSTATUS"));
     Serial.print(F("P ")); Serial.print(currentProfile.name);
     Serial.print(F(" B ")); Serial.print(currentProfile.brightness);
